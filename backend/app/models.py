@@ -34,8 +34,8 @@ class IssueResponse(BaseModel):
     original: dict[str, str] | None = None
     created_at: str
     incident_date: str
-    description: str
-    photo_url: str
+    description: str | None
+    photo_url: str | None
     analysis_state: Literal["pending", "complete", "failed"] = "pending"
     review_state: Literal["needs_review", "approved"] = "needs_review"
     analysis: Analysis | None = None
@@ -82,3 +82,49 @@ class IssuePatch(BaseModel):
             if getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
+
+
+class PlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    crew: Crew
+
+
+class PlanPoint(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
+class PlanStop(PlanPoint):
+    order: int = Field(gt=0)
+    report_id: int
+    arrive: str
+    complete: str
+    travel_minutes: int = Field(ge=0)
+    task_minutes: int = Field(gt=0)
+
+
+class PlanLunch(PlanPoint):
+    start: str = "12:00"
+    end: str = "13:00"
+
+
+class PlanTotals(BaseModel):
+    travel_minutes: int = Field(ge=0)
+    task_minutes: int = Field(ge=0)
+
+
+class OmittedJob(BaseModel):
+    report_id: int
+    reason: str
+    message: str
+
+
+class PlanResponse(BaseModel):
+    crew: Crew
+    label: str = "Suggested feasible route"
+    depot: PlanPoint
+    stops: list[PlanStop]
+    lunch: PlanLunch
+    depot_return: str
+    totals: PlanTotals
+    omitted: list[OmittedJob]
