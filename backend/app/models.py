@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Analysis(BaseModel):
@@ -45,3 +45,40 @@ class IssueResponse(BaseModel):
     address: str | None = None
     routable: bool = False
     is_synthetic: bool = False
+
+
+Crew = Literal["roads", "cleanup", "graffiti", "lighting", "arborist", "drainage", "manual_triage"]
+TaskType = Literal["repair", "removal", "inspection", "manual_triage"]
+
+
+class LocationCorrection(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+
+    lat: float | None = Field(ge=-90, le=90)
+    lng: float | None = Field(ge=-180, le=180)
+    confirmed: bool
+
+    @model_validator(mode="after")
+    def validate_coordinates(self):
+        if (self.lat is None) != (self.lng is None):
+            raise ValueError("Supply both lat and lng or clear both")
+        if self.confirmed and self.lat is None:
+            raise ValueError("Confirmed location requires coordinates")
+        return self
+
+
+class IssuePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    crew: Crew | None = None
+    task_type: TaskType | None = None
+    estimated_minutes: int | None = Field(default=None, gt=0)
+    location: LocationCorrection | None = None
+    review_state: Literal["needs_review", "approved"] | None = None
+
+    @model_validator(mode="after")
+    def reject_null_controls(self):
+        for field in self.model_fields_set - {"estimated_minutes"}:
+            if getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
