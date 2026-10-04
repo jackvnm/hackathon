@@ -8,8 +8,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings
 from app.dependencies import get_settings, get_store
-from app.models import IssueResponse, Location
-from app.photos import inspect_photo
+from app.models import IssueResponse
+from app.photos import inspect_photo, resolve_location
 from app.storage import Store
 
 logger = logging.getLogger(__name__)
@@ -33,13 +33,11 @@ def submit_issue(
         raise HTTPException(422, detail={"field": "description", "message": "Description must not be blank"})
     if (lat is None) != (lng is None):
         raise HTTPException(422, detail={"field": "location", "message": "Supply both lat and lng"})
-    if location_confirmed and lat is None:
-        raise HTTPException(422, detail={"field": "location_confirmed", "message": "Coordinates are required to confirm a location"})
     data = photo.file.read(settings.max_photo_bytes + 1)
     if len(data) > settings.max_photo_bytes:
         raise HTTPException(413, detail={"field": "photo", "message": "Photo must be 10 MiB or smaller"})
     extension, media_type = inspect_photo(data)
-    location = Location(lat=lat, lng=lng, source="map_pin" if lat is not None else "none", confirmed=location_confirmed)
+    location = resolve_location(data, lat, lng, location_confirmed)
     try:
         return store.create_issue(
             photo=data, extension=extension, media_type=media_type,

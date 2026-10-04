@@ -20,7 +20,7 @@ def photo_bytes() -> bytes:
     return buffer.getvalue()
 
 
-class SubmissionTests(unittest.TestCase):
+class SubmissionCase(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -32,6 +32,8 @@ class SubmissionTests(unittest.TestCase):
     def submit(self, **fields):
         return self.client.post("/api/issues", data={"description": "Pothole at the kerb", "email": "demo@example.com", **fields}, files={"photo": ("../../unsafe.jpg", self.photo, "image/jpeg")})
 
+
+class SubmissionTests(SubmissionCase):
     def test_saved_original_and_private_email_survive_restart(self):
         response = self.submit(address="Demo street")
         self.assertEqual(response.status_code, 201, response.text)

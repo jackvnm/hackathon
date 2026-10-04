@@ -26,6 +26,13 @@ optional `address`, optional paired `lat`/`lng`, and `location_confirmed`
 alone is saved as unlocated. Photos must be valid JPEG, PNG or WebP, at most
 10 MiB and 20 million pixels. Original bytes are stored under generated names.
 
+GPS is extracted from the original photo before any transformations. Without
+a pin, valid photo GPS becomes the canonical location. A differing pin overrides
+GPS; confirming the same coordinates retains `photo_gps` as the source. Both
+GPS and pins require explicit `location_confirmed=true` to confirm them.
+Missing or malformed GPS is unlocated unless a pin is supplied. Frontend EXIF
+inspection can control its form, but backend extraction remains authoritative.
+
 ```sh
 curl --fail-with-body http://127.0.0.1:8000/api/issues \
   -F 'photo=@/absolute/path/to/demo-photo.jpg' \
