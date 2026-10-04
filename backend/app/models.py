@@ -1,6 +1,17 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class Analysis(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, revalidate_instances="always")
+
+    category: str = Field(min_length=1, max_length=200)
+    summary: str = Field(min_length=1, max_length=1000)
+    required_capabilities: list[str]
+    time_cost_minutes: int | None = Field(gt=0)
+    needs_inspection: bool
+    needs_review: bool
 
 
 class Location(BaseModel):
@@ -27,7 +38,8 @@ class IssueResponse(BaseModel):
     photo_url: str
     analysis_state: Literal["pending", "complete", "failed"] = "pending"
     review_state: Literal["needs_review", "approved"] = "needs_review"
-    analysis: dict | None = None
+    analysis: Analysis | None = None
+    analysis_error: str | None = None
     assignment: Assignment = Field(default_factory=Assignment)
     location: Location
     address: str | None = None

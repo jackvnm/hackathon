@@ -7,10 +7,12 @@ from pydantic import EmailStr
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings
-from app.dependencies import get_settings, get_store
+from app.dependencies import get_classifier, get_settings, get_store
 from app.models import IssueResponse
 from app.photos import inspect_photo, resolve_location
 from app.storage import Store
+from app.services.classification import Classifier
+from app.services.submissions import classify_saved_issue
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/issues", tags=["issues"])
@@ -20,6 +22,7 @@ router = APIRouter(prefix="/api/issues", tags=["issues"])
 def submit_issue(
     store: Annotated[Store, Depends(get_store)],
     settings: Annotated[Settings, Depends(get_settings)],
+    classifier: Annotated[Classifier, Depends(get_classifier)],
     photo: Annotated[UploadFile, File()],
     description: Annotated[str, Form(min_length=1, max_length=5000)],
     email: Annotated[EmailStr, Form()],
@@ -39,7 +42,7 @@ def submit_issue(
     extension, media_type = inspect_photo(data)
     location = resolve_location(data, lat, lng, location_confirmed)
     try:
-        return store.create_issue(
+        saved = store.create_issue(
             photo=data, extension=extension, media_type=media_type,
             description=description, email=str(email),
             address=(address.strip() or None) if address else None,
@@ -48,6 +51,7 @@ def submit_issue(
     except (OSError, SQLAlchemyError) as exc:
         logger.error("Submission storage failed (%s)", type(exc).__name__)
         raise HTTPException(503, detail={"message": "Submission not saved; please retry"}) from exc
+    return classify_saved_issue(store, classifier, saved, photo=data, media_type=media_type, description=description)
 
 
 @router.get("/{issue_id}/photo")

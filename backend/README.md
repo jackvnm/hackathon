@@ -16,7 +16,9 @@ using a local `.env`, add `--env-file .env` to the uvicorn command.
 comma-separated list. Credentials, local databases and uploads must not
 be committed.
 
-The storage milestone does not call OpenAI or implement review or planning.
+Persistence uses SQLAlchemy ORM with SQLite. `app/main.py` configures the app,
+middleware and lifecycle; endpoints live in `app/routers/`. Classification
+and workflow logic live in `app/services/`. Review and planning follow later.
 
 ## Submission
 
@@ -41,12 +43,40 @@ curl --fail-with-body http://127.0.0.1:8000/api/issues \
   -F 'lat=53.34' -F 'lng=-6.26' -F 'location_confirmed=true'
 ```
 
-Success is HTTP 201 with a reference, relative `photo_url`, pending analysis
+Success is HTTP 201 with a reference, relative `photo_url`, analysis state
 and `needs_review`. It does not imply approval or routing eligibility. Email
 is stored privately and excluded from the response. Photos can be retrieved
 using the returned URL. Storage failure is HTTP 503, explicitly saying the
 submission was not saved. Invalid fields/images return 422; oversized files
 return 413. Failures return FastAPI's `detail` field.
+
+## OpenAI classification
+
+Set `OPENAI_API_KEY` server-side (for example in an ignored `backend/.env`)
+and run uvicorn with `--env-file .env`. `OPENAI_MODEL` defaults to
+`gpt-4.1-mini` and can be changed to a model supporting image inputs and
+structured outputs. The original photo and description are sent together
+through `client.responses.parse`, with Pydantic validation. Reporter email
+is never included. The report and original photo commit before analysis.
+
+A missing key, API failure, refusal or invalid result returns the saved report
+with `analysis_state=failed`, `analysis_error`, and `review_state=needs_review`.
+If saving the analysis result fails, the original remains saved and pending,
+with an explicit `analysis_error`. Classification never approves a task.
+
+Backend category mappings assign roads to repair, cleanup and graffiti to
+removal, and lighting, arborist and drainage to inspection/review. Unlisted
+categories require manual triage. Unknown durations remain null. Repair
+estimates are never reused when a specialist task is changed to inspection.
+Mappings and crew capabilities are configured in `app/assignments.py`.
+
+Available now: health, multipart submission and original-photo retrieval.
+`GET /api/issues`, dispatcher PATCH and `POST /api/plan` are subsequent
+milestones. Frontend mocks for those endpoints should continue matching
+AGENTS.md until they are implemented.
+
+Official references: [image inputs](https://developers.openai.com/api/docs/guides/images-vision)
+and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 
 ## Verification
 
