@@ -128,3 +128,8 @@ class PlanResponse(BaseModel):
     depot_return: str
     totals: PlanTotals
     omitted: list[OmittedJob]
+
+
+class PhotoMetadataResponse(BaseModel):
+    gps_found: bool
+    location: Location

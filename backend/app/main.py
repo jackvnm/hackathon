@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.database import Database
-from app.routers import health, issues, planning
+from app.routers import health, issues, photos, planning
 from app.services.classification import Classifier, OpenAIClassifier
 from app.storage import Store
 from app.services.osrm import OSRMClient
@@ -37,6 +37,7 @@ def create_app(settings: Settings | None = None, *, classifier: Classifier | Non
     )
     app.include_router(health.router)
     app.include_router(issues.router)
+    app.include_router(photos.router)
     app.include_router(planning.router)
     return app
 

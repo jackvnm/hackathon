@@ -26,7 +26,11 @@ const DEMO_REPORTS = [
 async function request(path, options = {}) {
   const response = await fetch(`${API}/api${path}`, options)
   const data = response.status === 204 ? null : await response.json().catch(() => null)
-  if (!response.ok) throw new Error(data?.detail || data?.message || `Request failed (${response.status})`)
+  if (!response.ok) {
+    const detail = data?.detail
+    const message = Array.isArray(detail) ? detail.map((item) => item.msg).join('; ') : detail?.message || detail
+    throw new Error(message || data?.message || `Request failed (${response.status})`)
+  }
   return data
 }
 
@@ -149,62 +153,13 @@ function MapPanel({ reports, selectedId, onSelect, pin, onPin, route = false }) 
   return <div ref={host} className={`map-canvas${onPin ? ' map-pick' : ''}`} aria-label={onPin ? 'Click to set report location' : 'Reports map'} />
 }
 
-function readPhotoGps(file) {
-  return new Promise((resolve) => {
-    if (!file || !/jpe?g/i.test(file.type)) return resolve(null)
-    const reader = new FileReader()
-    reader.onerror = () => resolve(null)
-    reader.onload = () => {
-      try {
-        const bytes = new DataView(reader.result)
-        if (bytes.getUint16(0) !== 0xffd8) return resolve(null)
-        let offset = 2
-        while (offset + 4 < bytes.byteLength) {
-          if (bytes.getUint8(offset) !== 0xff) break
-          const marker = bytes.getUint8(offset + 1)
-          const length = bytes.getUint16(offset + 2)
-          if (marker === 0xe1 && bytes.getUint32(offset + 4) === 0x45786966 && bytes.getUint16(offset + 8) === 0) {
-            const tiff = offset + 10
-            const little = bytes.getUint16(tiff) === 0x4949
-            const u16 = (at) => bytes.getUint16(at, little)
-            const u32 = (at) => bytes.getUint32(at, little)
-            const ifd = tiff + u32(tiff + 4)
-            const entries = u16(ifd)
-            let gpsOffset = null
-            for (let index = 0; index < entries; index++) {
-              const entry = ifd + 2 + index * 12
-              if (u16(entry) === 0x8825) gpsOffset = tiff + u32(entry + 8)
-            }
-            if (gpsOffset == null) return resolve(null)
-            const gpsEntries = u16(gpsOffset)
-            const tags = {}
-            for (let index = 0; index < gpsEntries; index++) {
-              const entry = gpsOffset + 2 + index * 12
-              tags[u16(entry)] = entry
-            }
-            const ascii = (entry) => String.fromCharCode(...Array.from({ length: bytes.getUint32(entry + 4, little) }, (_, index) => bytes.getUint8(tiff + bytes.getUint32(entry + 8, little) + index))).replaceAll('\0', '')
-            const coord = (entry) => {
-              const start = tiff + u32(entry + 8)
-              const parts = Array.from({ length: 3 }, (_, index) => {
-                const at = start + index * 8
-                return bytes.getUint32(at, little) / (bytes.getUint32(at + 4, little) || 1)
-              })
-              return parts[0] + parts[1] / 60 + parts[2] / 3600
-            }
-            if (!tags[1] || !tags[2] || !tags[3] || !tags[4]) return resolve(null)
-            let latitude = coord(tags[2]); let longitude = coord(tags[4])
-            if (ascii(tags[1]).startsWith('S')) latitude *= -1
-            if (ascii(tags[3]).startsWith('W')) longitude *= -1
-            if (Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180) return resolve({ latitude, longitude })
-            return resolve(null)
-          }
-          offset += 2 + length
-        }
-        resolve(null)
-      } catch { resolve(null) }
-    }
-    reader.readAsArrayBuffer(file)
-  })
+async function readPhotoGps(file, signal) {
+  const body = new FormData()
+  body.append('photo', file)
+  const metadata = await request('/photos/metadata', { method: 'POST', body, signal })
+  return metadata.gps_found
+    ? { latitude: metadata.location.lat, longitude: metadata.location.lng }
+    : null
 }
 
 function App() {
@@ -362,24 +317,49 @@ function ReportForm({ onSubmitted }) {
   const [address, setAddress] = useState('')
   const [pin, setPin] = useState(null)
   const [gpsFound, setGpsFound] = useState(false)
+  const [metadataState, setMetadataState] = useState('idle')
+  const [metadataError, setMetadataError] = useState('')
   const [locationConfirmed, setLocationConfirmed] = useState(false)
   const [state, setState] = useState('idle')
   const [error, setError] = useState('')
   const inputRef = useRef(null)
+  const metadataRequest = useRef(null)
+  useEffect(() => () => metadataRequest.current?.abort(), [])
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
   const chooseFile = async (selected) => {
     if (!selected) return
+    metadataRequest.current?.abort()
+    const controller = new AbortController()
+    metadataRequest.current = controller
     setFile(selected); setPreview(URL.createObjectURL(selected)); setGpsFound(false); setPin(null); setLocationConfirmed(false)
-    const gps = await readPhotoGps(selected)
-    if (gps) { setPin(gps); setGpsFound(true) }
+    setMetadataState('loading'); setMetadataError(''); setError('')
+    try {
+      const gps = await readPhotoGps(selected, controller.signal)
+      if (controller.signal.aborted) return
+      if (gps) { setPin(gps); setGpsFound(true); setAddress('') }
+      setMetadataState('ready')
+    } catch (failure) {
+      if (controller.signal.aborted) return
+      setMetadataError(failure.message); setMetadataState('error')
+    }
+  }
+  const removeFile = () => {
+    metadataRequest.current?.abort()
+    setFile(null); setPreview(''); setPin(null); setGpsFound(false); setLocationConfirmed(false)
+    setMetadataState('idle'); setMetadataError(''); setError('')
+    if (inputRef.current) inputRef.current.value = ''
   }
   const submit = async (event) => {
-    event.preventDefault(); setState('loading'); setError('')
+    event.preventDefault()
+    if (!file || metadataState !== 'ready') return
+    setState('loading'); setError('')
     const body = new FormData()
     body.append('photo', file)
     body.append('description', description)
     body.append('email', email)
-    if (address) body.append('address', address)
-    if (pin && locationConfirmed) { body.append('lat', String(pin.latitude)); body.append('lng', String(pin.longitude)) }
+    if (!gpsFound && address) body.append('address', address)
+    if (pin) { body.append('lat', String(pin.latitude)); body.append('lng', String(pin.longitude)) }
+    body.append('location_confirmed', String(locationConfirmed))
     try {
       const result = await request('/issues', { method: 'POST', body })
       onSubmitted(result)
@@ -387,16 +367,19 @@ function ReportForm({ onSubmitted }) {
   }
   return <div className="page-content report-page"><div className="page-heading"><div><div className="eyebrow">DUBLIN CITY · COMMUNITY REPORTING</div><h1>Report an issue</h1><p>Share a photo and details. Our team will review it and get it to the right crew.</p></div><span className="secure-note"><Icon name="check" size={14}/> Your details stay private</span></div>
     <div className="report-layout"><form className="report-form panel" onSubmit={submit}><div className="form-section-heading"><span className="step-index">1</span><div><h2>What needs attention?</h2><p>A clear photo helps us understand what’s going on.</p></div></div>
-      {!file ? <button type="button" className="upload-zone" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); chooseFile(event.dataTransfer.files?.[0]) }}><span className="upload-icon"><Icon name="upload" size={22}/></span><strong>Drop a photo here or <span>browse files</span></strong><small>JPG, PNG or HEIC · up to 15 MB</small><input ref={inputRef} type="file" accept="image/*" hidden onChange={(event) => chooseFile(event.target.files?.[0])}/></button> : <div className="photo-preview"><img src={preview} alt="Preview of issue"/><div className="photo-info"><strong>{file.name}</strong><span>{(file.size / 1024 / 1024).toFixed(1)} MB · {gpsFound ? 'Photo GPS found' : 'No photo GPS found'}</span></div><button type="button" className="icon-button" onClick={() => { setFile(null); setPreview(''); setPin(null); setGpsFound(false); setLocationConfirmed(false); if (inputRef.current) inputRef.current.value = '' }} aria-label="Remove photo"><Icon name="close"/></button></div>}
+      {!file ? <button type="button" className="upload-zone" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); chooseFile(event.dataTransfer.files?.[0]) }}><span className="upload-icon"><Icon name="upload" size={22}/></span><strong>Drop a photo here or <span>browse files</span></strong><small>JPEG, PNG or WebP · up to 10 MiB</small><input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => chooseFile(event.target.files?.[0])}/></button> : <div className="photo-preview"><img src={preview} alt="Preview of issue"/><div className="photo-info"><strong>{file.name}</strong><span>{(file.size / 1024 / 1024).toFixed(1)} MB · {metadataState === 'loading' ? 'Checking photo location…' : metadataState === 'error' ? 'Photo location check failed' : gpsFound ? 'Photo GPS found' : 'No photo GPS found'}</span></div><button type="button" className="icon-button" onClick={removeFile} aria-label="Remove photo"><Icon name="close"/></button></div>}
       <label className="form-label">Description <span>What did you notice?</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows="3" maxLength="1000" placeholder="Add a few details to help the crew…" required/></label>
+      {metadataState === 'loading' && <p role="status">Checking the photo for a location…</p>}
+      {metadataError && <div className="form-error" role="alert"><strong>Could not check photo location</strong><span>{metadataError}</span><button type="button" onClick={() => chooseFile(file)}>Retry photo check</button></div>}
       <div className="form-divider"/><div className="form-section-heading"><span className="step-index">2</span><div><h2>Where is the issue?</h2><p>{gpsFound ? 'Photo location detected. Confirm the pin is in the right place.' : 'Choose the location on the map so the crew can find it.'}</p></div></div>
       <div className="location-source-note"><Icon name="pin" size={16}/><span>{gpsFound ? 'Photo GPS is shown on the map. Confirm it or choose a more precise pin.' : 'Tap the map to set a report location. Address text alone can’t be used for routing.'}</span></div>
-      <MapPanel reports={[]} pin={pin} onPin={(point) => { setPin(point); setLocationConfirmed(true) }}/><div className="pin-status">{pin ? <><span className={locationConfirmed ? 'live-dot' : 'pending-dot'}/>{locationConfirmed ? 'Location confirmed' : 'Confirm the photo location'} · {pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}</> : <><Icon name="pin" size={15}/> Tap the map to drop a pin</>}</div>
-      {!gpsFound && <label className="form-label address-label">Nearest address or landmark <span>Optional context</span><input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street, building or nearby landmark"/></label>}
+      <MapPanel reports={[]} pin={pin} onPin={metadataState === 'ready' ? (point) => { setPin(point); setLocationConfirmed(true) } : undefined}/><div className="pin-status">{pin ? <><span className={locationConfirmed ? 'live-dot' : 'pending-dot'}/>{locationConfirmed ? 'Location confirmed' : 'Confirm the photo location'} · {pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}</> : <><Icon name="pin" size={15}/> Tap the map to drop a pin</>}</div>
+      {pin && !locationConfirmed && <button type="button" className="button button-dark" onClick={() => setLocationConfirmed(true)}>Confirm photo location</button>}
+      {!gpsFound && metadataState === 'ready' && <label className="form-label address-label">Nearest address or landmark <span>Optional context</span><input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street, building or nearby landmark"/></label>}
       <div className="form-divider"/><div className="form-section-heading"><span className="step-index">3</span><div><h2>How can we contact you?</h2><p>Your email is private and won’t be shared with the crew.</p></div></div>
       <label className="form-label">Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required/></label>
       {error && <div className="form-error"><strong>Report wasn’t saved</strong><span>{error}. Your details are still here; please try again.</span></div>}
-      <button className="button button-dark submit-button" disabled={state === 'loading' || !file}>{state === 'loading' ? <><span className="spinner spinner-light"/> Sending report…</> : <>Submit report <Icon name="arrow" size={17}/></>}</button><p className="submit-hint">Reports without a confirmed pin can be saved for dispatcher review, but won’t be scheduled until located.</p>
+      <button className="button button-dark submit-button" disabled={state === 'loading' || !file || metadataState !== 'ready'}>{state === 'loading' ? <><span className="spinner spinner-light"/> Sending report…</> : <>Submit report <Icon name="arrow" size={17}/></>}</button><p className="submit-hint">Reports without a confirmed pin can be saved for dispatcher review, but won’t be scheduled until located.</p>
     </form><aside className="report-aside"><div className="aside-card"><span className="aside-icon"><Icon name="check"/></span><h3>What happens next?</h3><ol><li><b>01</b><span><strong>We review your report</strong><small>Our team checks the details and photo.</small></span></li><li><b>02</b><span><strong>It goes to the right crew</strong><small>We match the issue with the people best placed to help.</small></span></li><li><b>03</b><span><strong>We plan the work</strong><small>The dispatcher adds approved work to a crew’s day.</small></span></li></ol></div><div className="privacy-card"><Icon name="pin" size={18}/><div><strong>A quick note about location</strong><p>A confirmed pin gives crews a usable location. If your photo has GPS, the team can check it against the map pin.</p></div></div></aside></div>
   </div>
 }
