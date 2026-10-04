@@ -32,8 +32,14 @@ GPS is extracted from the original photo before any transformations. Without
 a pin, valid photo GPS becomes the canonical location. A differing pin overrides
 GPS; confirming the same coordinates retains `photo_gps` as the source. Both
 GPS and pins require explicit `location_confirmed=true` to confirm them.
-Missing or malformed GPS is unlocated unless a pin is supplied. Frontend EXIF
-inspection can control its form, but backend extraction remains authoritative.
+Missing or malformed GPS is unlocated unless a pin is supplied. The reporting form first calls `POST /api/photos/metadata` with the original
+photo. This read-only multipart endpoint returns `{gps_found, location}` using
+the same JPEG/PNG/WebP validation and EXIF extraction as submission. It does not
+save a report/photo or call the model. Coordinates are returned unconfirmed.
+The form hides address entry while checking or when valid GPS is found, offers
+confirmation of the photo pin, and sends `location_confirmed` on submission.
+A failed metadata request is shown with retry rather than treated as missing
+GPS. Final submission independently extracts and validates metadata again.
 
 ```sh
 curl --fail-with-body http://127.0.0.1:8000/api/issues \
