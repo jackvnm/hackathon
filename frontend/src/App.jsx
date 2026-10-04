@@ -26,7 +26,11 @@ const DEMO_REPORTS = [
 async function request(path, options = {}) {
   const response = await fetch(`${API}/api${path}`, options)
   const data = response.status === 204 ? null : await response.json().catch(() => null)
-  if (!response.ok) throw new Error(data?.detail || data?.message || `Request failed (${response.status})`)
+  if (!response.ok) {
+    const detail = data?.detail
+    const message = typeof detail === 'string' ? detail : detail?.message || data?.message || `Request failed (${response.status})`
+    throw new Error(message)
+  }
   return data
 }
 
@@ -379,7 +383,11 @@ function ReportForm({ onSubmitted }) {
     body.append('description', description)
     body.append('email', email)
     if (address) body.append('address', address)
-    if (pin && locationConfirmed) { body.append('lat', String(pin.latitude)); body.append('lng', String(pin.longitude)) }
+    if (pin && locationConfirmed) {
+      body.append('lat', String(pin.latitude))
+      body.append('lng', String(pin.longitude))
+      body.append('location_confirmed', 'true')
+    }
     try {
       const result = await request('/issues', { method: 'POST', body })
       onSubmitted(result)
