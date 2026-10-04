@@ -17,3 +17,35 @@ comma-separated list. Credentials, local databases and uploads must not
 be committed.
 
 The storage milestone does not call OpenAI or implement review or planning.
+
+## Submission
+
+`POST /api/issues` accepts multipart fields `photo`, `description`, `email`,
+optional `address`, optional paired `lat`/`lng`, and `location_confirmed`
+(defaults to false). Coordinates alone do not imply confirmation. An address
+alone is saved as unlocated. Photos must be valid JPEG, PNG or WebP, at most
+10 MiB and 20 million pixels. Original bytes are stored under generated names.
+
+```sh
+curl --fail-with-body http://127.0.0.1:8000/api/issues \
+  -F 'photo=@/absolute/path/to/demo-photo.jpg' \
+  -F 'description=Visible pothole near the kerb' \
+  -F 'email=demo@example.com' \
+  -F 'lat=53.34' -F 'lng=-6.26' -F 'location_confirmed=true'
+```
+
+Success is HTTP 201 with a reference, relative `photo_url`, pending analysis
+and `needs_review`. It does not imply approval or routing eligibility. Email
+is stored privately and excluded from the response. Photos can be retrieved
+using the returned URL. Storage failure is HTTP 503, explicitly saying the
+submission was not saved. Invalid fields/images return 422; oversized files
+return 413. Failures return FastAPI's `detail` field.
+
+## Verification
+
+```sh
+uv run python -m unittest discover -s tests -v
+```
+
+Tests generate clearly synthetic photos in temporary directories and never
+save reporter data or photo fixtures into the repository.
