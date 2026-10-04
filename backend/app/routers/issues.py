@@ -8,9 +8,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings
 from app.dependencies import get_classifier, get_settings, get_store
-from app.models import IssueResponse
+from app.models import Crew, IssuePatch, IssueResponse
 from app.photos import inspect_photo, resolve_location
-from app.storage import Store
+from app.storage import ReviewValidationError, Store
 from app.services.classification import Classifier
 from app.services.submissions import classify_saved_issue
 
@@ -67,3 +67,33 @@ def get_photo(
     if not path.is_file():
         raise HTTPException(404, detail="Photo not found")
     return FileResponse(path, media_type=issue.photo_media_type, headers={"X-Content-Type-Options": "nosniff"})
+
+
+@router.get("", response_model=list[IssueResponse])
+def list_issues(
+    store: Annotated[Store, Depends(get_store)],
+    crew: Crew | None = None,
+) -> list[IssueResponse]:
+    try:
+        return store.list_issues(crew)
+    except SQLAlchemyError as exc:
+        logger.error("Report retrieval failed (%s)", type(exc).__name__)
+        raise HTTPException(503, detail={"message": "Reports unavailable; please retry"}) from exc
+
+
+@router.patch("/{issue_id}", response_model=IssueResponse)
+def patch_issue(
+    issue_id: int,
+    patch: IssuePatch,
+    store: Annotated[Store, Depends(get_store)],
+) -> IssueResponse:
+    try:
+        updated = store.patch_issue(issue_id, patch)
+    except ReviewValidationError as exc:
+        raise HTTPException(422, detail={"field": exc.field, "message": exc.message}) from exc
+    except SQLAlchemyError as exc:
+        logger.error("Report update failed (%s)", type(exc).__name__)
+        raise HTTPException(503, detail={"message": "Update not saved; please retry"}) from exc
+    if updated is None:
+        raise HTTPException(404, detail="Report not found")
+    return updated
