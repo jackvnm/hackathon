@@ -5,9 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.database import Database
-from app.routers import health, issues
+from app.routers import health, issues, planning
 from app.services.classification import Classifier, OpenAIClassifier
 from app.storage import Store
+from app.services.osrm import OSRMClient
 
 
 def create_app(settings: Settings | None = None, *, classifier: Classifier | None = None) -> FastAPI:
@@ -26,6 +27,7 @@ def create_app(settings: Settings | None = None, *, classifier: Classifier | Non
     app.state.settings = settings
     app.state.database = database
     app.state.store = Store(database)
+    app.state.travel_provider = OSRMClient(settings.osrm_url, settings.osrm_timeout_seconds)
     app.state.classifier = classifier if classifier is not None else OpenAIClassifier(settings)
     app.add_middleware(
         CORSMiddleware,
@@ -35,6 +37,7 @@ def create_app(settings: Settings | None = None, *, classifier: Classifier | Non
     )
     app.include_router(health.router)
     app.include_router(issues.router)
+    app.include_router(planning.router)
     return app
 
 

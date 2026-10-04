@@ -61,7 +61,7 @@ def get_photo(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> FileResponse:
     issue = store.get_issue(issue_id)
-    if issue is None:
+    if issue is None or issue.photo_filename is None:
         raise HTTPException(404, detail="Photo not found")
     path = settings.photo_dir / issue.photo_filename
     if not path.is_file():

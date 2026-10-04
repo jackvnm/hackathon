@@ -16,10 +16,10 @@ class Issue(Base):
     reference: Mapped[str | None] = mapped_column(String, unique=True)
     created_at: Mapped[str] = mapped_column(String)
     incident_date: Mapped[str] = mapped_column(String)
-    description: Mapped[str] = mapped_column(Text)
-    reporter_email: Mapped[str] = mapped_column(String)
-    photo_filename: Mapped[str] = mapped_column(String, unique=True)
-    photo_media_type: Mapped[str] = mapped_column(String)
+    description: Mapped[str | None] = mapped_column(Text)
+    reporter_email: Mapped[str | None] = mapped_column(String)
+    photo_filename: Mapped[str | None] = mapped_column(String, unique=True)
+    photo_media_type: Mapped[str | None] = mapped_column(String)
     address: Mapped[str | None] = mapped_column(String)
     lat: Mapped[float | None] = mapped_column(Float)
     lng: Mapped[float | None] = mapped_column(Float)
@@ -48,6 +48,9 @@ class Database:
 
     def initialize(self) -> None:
         self.settings.photo_dir.mkdir(parents=True, exist_ok=True)
+        from app.migrations import migrate_nullable_import_fields
+
+        migrate_nullable_import_fields(self.engine, Issue.__table__)
         Base.metadata.create_all(self.engine)
 
     def close(self) -> None:
