@@ -15,3 +15,7 @@ def get_store(request: Request) -> Store:
 
 def get_classifier(request: Request) -> Classifier:
     return request.app.state.classifier
+
+
+def get_travel_provider(request: Request):
+    return request.app.state.travel_provider

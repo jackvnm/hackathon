@@ -46,6 +46,10 @@ class Store:
         with self.database.sessions() as session:
             return session.get(Issue, issue_id)
 
+    def planning_issues(self) -> list[Issue]:
+        with self.database.sessions() as session:
+            return list(session.scalars(select(Issue).order_by(Issue.id)))
+
     def list_issues(self, crew: Crew | None = None) -> list[IssueResponse]:
         with self.database.sessions() as session:
             query = select(Issue).order_by(Issue.id.desc())
@@ -104,12 +108,13 @@ class Store:
     @staticmethod
     def public_issue(issue: Issue) -> IssueResponse:
         from app.eligibility import task_blockers
+        from app.coordinates import detect_crs
 
         # Explicit allowlist excludes email and internal paths.
         return IssueResponse(
             id=issue.id, reference=issue.reference, original=issue.original_json,
             created_at=issue.created_at, incident_date=issue.incident_date,
-            description=issue.description, photo_url=f"/api/issues/{issue.id}/photo",
+            description=issue.description, photo_url=f"/api/issues/{issue.id}/photo" if issue.photo_filename else None,
             analysis_state=issue.analysis_state, review_state=issue.review_state,
             analysis=issue.analysis_json,
             analysis_error="Analysis unavailable; dispatcher review required" if issue.analysis_state == "failed" else None,
@@ -120,6 +125,7 @@ class Store:
             location=Location(
                 lat=issue.lat, lng=issue.lng, source=issue.location_source,
                 confirmed=issue.location_confirmed,
+                crs_detected=detect_crs((issue.original_json or {}).get("ATTRIBUTE5"), (issue.original_json or {}).get("ATTRIBUTE6")) if issue.location_source == "csv" else None,
             ),
             address=issue.address, is_synthetic=issue.is_synthetic,
             routable=not task_blockers(issue),
