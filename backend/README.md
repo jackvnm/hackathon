@@ -64,6 +64,17 @@ with `analysis_state=failed`, `analysis_error`, and `review_state=needs_review`.
 If saving the analysis result fails, the original remains saved and pending,
 with an explicit `analysis_error`. Classification never approves a task.
 
+Backend category mappings assign roads to repair, cleanup and graffiti to
+removal, and lighting, arborist and drainage to inspection/review. Unlisted
+categories require manual triage. Unknown durations remain null. Repair
+estimates are never reused when a specialist task is changed to inspection.
+Mappings and crew capabilities are configured in `app/assignments.py`.
+
+Available now: health, multipart submission and original-photo retrieval.
+`GET /api/issues`, dispatcher PATCH and `POST /api/plan` are subsequent
+milestones. Frontend mocks for those endpoints should continue matching
+AGENTS.md until they are implemented.
+
 Official references: [image inputs](https://developers.openai.com/api/docs/guides/images-vision)
 and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 

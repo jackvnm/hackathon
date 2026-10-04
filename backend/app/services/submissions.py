@@ -2,6 +2,7 @@ import logging
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.assignments import assign_analysis
 from app.models import Analysis, IssueResponse
 from app.services.classification import Classifier
 from app.storage import Store
@@ -23,7 +24,10 @@ def classify_saved_issue(
         logger.warning("Saved issue %s analysis failed (%s)", saved.id, type(exc).__name__)
         analysis = None
     try:
-        return store.save_analysis(saved.id, analysis)
+        if analysis is not None:
+            analysis, assignment = assign_analysis(analysis)
+            return store.save_analysis(saved.id, analysis, assignment)
+        return store.save_analysis(saved.id, None)
     except SQLAlchemyError as exc:
         logger.error("Saved issue %s analysis persistence failed (%s)", saved.id, type(exc).__name__)
         # The original submission is already saved: never say 'not saved'.

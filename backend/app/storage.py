@@ -44,7 +44,7 @@ class Store:
         with self.database.sessions() as session:
             return session.get(Issue, issue_id)
 
-    def save_analysis(self, issue_id: int, analysis: Analysis | None) -> IssueResponse:
+    def save_analysis(self, issue_id: int, analysis: Analysis | None, assignment: Assignment | None = None) -> IssueResponse:
         with self.database.sessions.begin() as session:
             issue = session.get(Issue, issue_id)
             if issue is None:
@@ -52,6 +52,10 @@ class Store:
             issue.analysis_state = "complete" if analysis else "failed"
             issue.analysis_json = analysis.model_dump() if analysis else None
             issue.review_state = "needs_review"
+            assignment = assignment or Assignment()
+            issue.crew = assignment.crew
+            issue.task_type = assignment.task_type
+            issue.estimated_minutes = assignment.estimated_minutes
             return self.public_issue(issue)
 
     @staticmethod
