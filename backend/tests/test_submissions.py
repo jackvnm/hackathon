@@ -39,7 +39,7 @@ class SubmissionTests(SubmissionCase):
         self.assertEqual(response.status_code, 201, response.text)
         report = response.json()
         self.assertEqual(report["reference"], "CIV-000001")
-        self.assertEqual(report["analysis_state"], "pending")
+        self.assertEqual(report["analysis_state"], "failed")
         self.assertEqual(report["review_state"], "needs_review")
         self.assertFalse(report["routable"])
         self.assertNotIn("email", response.text)

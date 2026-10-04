@@ -6,10 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import Settings
 from app.database import Database
 from app.routers import health, issues
+from app.services.classification import Classifier, OpenAIClassifier
 from app.storage import Store
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, classifier: Classifier | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     database = Database(settings)
 
@@ -25,6 +26,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.database = database
     app.state.store = Store(database)
+    app.state.classifier = classifier if classifier is not None else OpenAIClassifier(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),

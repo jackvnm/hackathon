@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.database import Database, Issue
-from app.models import Assignment, IssueResponse, Location
+from app.models import Analysis, Assignment, IssueResponse, Location
 
 
 class Store:
@@ -44,6 +44,16 @@ class Store:
         with self.database.sessions() as session:
             return session.get(Issue, issue_id)
 
+    def save_analysis(self, issue_id: int, analysis: Analysis | None) -> IssueResponse:
+        with self.database.sessions.begin() as session:
+            issue = session.get(Issue, issue_id)
+            if issue is None:
+                raise ValueError("Saved issue not found")
+            issue.analysis_state = "complete" if analysis else "failed"
+            issue.analysis_json = analysis.model_dump() if analysis else None
+            issue.review_state = "needs_review"
+            return self.public_issue(issue)
+
     @staticmethod
     def public_issue(issue: Issue) -> IssueResponse:
         # Explicit allowlist excludes email and internal paths.
@@ -53,6 +63,7 @@ class Store:
             description=issue.description, photo_url=f"/api/issues/{issue.id}/photo",
             analysis_state=issue.analysis_state, review_state=issue.review_state,
             analysis=issue.analysis_json,
+            analysis_error="Analysis unavailable; dispatcher review required" if issue.analysis_state == "failed" else None,
             assignment=Assignment(
                 crew=issue.crew, task_type=issue.task_type,
                 estimated_minutes=issue.estimated_minutes,
