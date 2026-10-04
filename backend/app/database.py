@@ -27,7 +27,7 @@ class Issue(Base):
     location_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     original_json: Mapped[dict | None] = mapped_column(JSON)
     source_status: Mapped[str | None] = mapped_column(String)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     is_synthetic: Mapped[bool] = mapped_column(Boolean, default=False)
     analysis_state: Mapped[str] = mapped_column(String, default="pending")
     review_state: Mapped[str] = mapped_column(String, default="needs_review")
